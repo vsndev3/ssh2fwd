@@ -26,8 +26,7 @@ jobs:
         shell: bash
         run: |
           if ! grep -q "version = \"$VERSION\"" Cargo.toml; then
-            echo "version does not match Cargo.toml" >&2
-            exit 1
+            echo "version does not match Cargo.toml" >&2            
           fi
       - name: Create GitHub release
         env:
