@@ -18,7 +18,7 @@ use tokio::time::{sleep, Duration};
     about = "Port forwarding via SSH\n\nRun this application \
  to connect to remote SSH server\nand access a different server that is reachable via SSH \
  server to a local port\n\n\
- e.g ./ssh2f --sshaddress 10.0.0.1:22 --sshuser username --remote-srv localhost --remote-port 8080 -l 0.0.0.0:8181\
+ e.g ./ssh2fwd --sshaddress 10.0.0.1:22 --sshuser username --remote-srv localhost --remote-port 8080 -l 0.0.0.0:8181\
  "
 )]
 struct Opts {
