@@ -6,6 +6,15 @@ Run this application to connect to remote SSH server and access a different serv
 `
 e.g ./ssh2fwd --sshaddress 10.0.0.1:22 --sshuser username --remote-srv localhost --remote-port 8080 -l 0.0.0.0:8181
 `
+# Building from source
+A normal rust build with cargo like below:
+```
+git clone https://github.com/vsndev3/ssh2fwd.git
+cd ssh2fwd
+cargo build --release
+
+Binary will be available in ssh2fwd/target/ directory
+```
 
 # Usage
 ```
