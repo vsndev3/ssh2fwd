@@ -37,6 +37,18 @@ struct Opts {
     /// Local address:port we have to bind for providing connectivity to RemoteAddress:RemotePort
     #[clap(short = 'l', long, default_value = "127.0.0.1:8080")]
     local_srv_address: String,
+    /// Timeout for SSH session operations in milliseconds
+    #[clap(short = 't', long, default_value = "3000")]
+    timeout_ms: u64,
+    /// Number of times to retry connecting to the SSH server
+    #[clap(long, default_value = "5")]
+    connect_retries: u32,
+    /// Delay in milliseconds between connection retries
+    #[clap(long, default_value = "2000")]
+    connect_retry_delay_ms: u64,
+    /// Interval in seconds for sending SSH keepalive messages (0 to disable)
+    #[clap(long, default_value = "30")]
+    keepalive_interval_secs: u32,
 }
 
 fn get_channels_for_remote_server(
@@ -88,12 +100,60 @@ async fn main() -> anyhow::Result<()> {
     let remote_srv = args.remote_srv;
     let remote_port = args.remote_port;
     let localsrv = args.local_srv_address;
+    let timeout_ms = args.timeout_ms;
+    let connect_retries = args.connect_retries;
+    let connect_retry_delay_ms = args.connect_retry_delay_ms;
+    let keepalive_interval_secs = args.keepalive_interval_secs;
 
     info!("Connecting to SSH server at {}", &sshaddr);
-    let tcp = TcpStream::connect(&sshaddr).await?;
+    let mut last_err = None;
+    let mut tcp = None;
+    for attempt in 1..=connect_retries {
+        match TcpStream::connect(&sshaddr).await {
+            Ok(s) => {
+                tcp = Some(s);
+                break;
+            }
+            Err(e) => {
+                last_err = Some(e);
+                warn!("Attempt {}/{}: Failed to connect to {}: {}", attempt, connect_retries, &sshaddr, last_err.as_ref().unwrap());
+                if attempt < connect_retries {
+                    sleep(Duration::from_millis(connect_retry_delay_ms)).await;
+                }
+            }
+        }
+    }
+    let tcp = match tcp {
+        Some(s) => s,
+        None => {
+            error!("Failed to connect to {} after {} attempts", &sshaddr, connect_retries);
+            return Err(anyhow::anyhow!(last_err.unwrap()));
+        }
+    };
     let mut session = Session::new()?;
     session.set_tcp_stream(tcp);
-    session.handshake()?;
+    // Set SSH keepalive interval (0 disables)
+    session.set_keepalive(true, keepalive_interval_secs);
+    let mut handshake_ok = false;
+    for attempt in 1..=connect_retries {
+        match session.handshake() {
+            Ok(_) => {
+                handshake_ok = true;
+                break;
+            }
+            Err(e) => {
+                warn!("Attempt {}/{}: SSH handshake failed: {}", attempt, connect_retries, e);
+                if attempt < connect_retries {
+                    sleep(Duration::from_millis(connect_retry_delay_ms)).await;
+                }
+            }
+        }
+    }
+    if !handshake_ok {
+        error!("SSH handshake failed after {} attempts", connect_retries);
+        return Err(anyhow::anyhow!("SSH handshake failed"));
+    }
+
     info!(
         "Connected to {}!. Now authendicating as user: {}",
         &sshaddr, sshuser
@@ -139,22 +199,27 @@ async fn main() -> anyhow::Result<()> {
 
         info!("New local connection for tunneling. {:?}", info);
         tokio::spawn(async move {
-            let (mut rxchan, mut txchan) = get_channels_for_remote_server(
+            let (mut rxchan, mut txchan) = match get_channels_for_remote_server(
                 &remote_srvc,
                 remote_port,
                 &handle_session,
                 stream_ref,
-            )
-            .unwrap();
+            ) {
+                Ok(channels) => channels,
+                Err(e) => {
+                    error!("Failed to get SSH channels: {:?}", e);
+                    return;
+                }
+            };
             let (mut local_rd, mut local_wr) = socket.into_split();
 
             handle_session.set_timeout(20);
 
-            let t1 = tokio::task::spawn_blocking(move || {
+            let t1 = tokio::spawn(async move {
                 let mut buf = vec![0; 1024];
                 debug!("Running new local read task");
                 loop {
-                    match block_on(local_rd.read(&mut buf)) {
+                    match local_rd.read(&mut buf).await {
                         Ok(0) => {
                             warn!("No bytes read from local connection. Closing.");
                             break;
@@ -177,7 +242,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             });
 
-            let t2 = tokio::task::spawn_blocking(move || {
+            let t2 = tokio::spawn(async move {
                 let mut buf = vec![0; 1024];
                 debug!("Running new remote read task");
                 loop {
@@ -188,7 +253,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                         Ok(n) => {
                             trace!("Remote channel read {} bytes", n);
-                            if block_on(local_wr.write_all(&buf[..n])).is_err() {
+                            if local_wr.write_all(&buf[..n]).await.is_err() {
                                 error!("Writing to local socket {}. Closing", n);
                                 break;
                             }
@@ -207,7 +272,7 @@ async fn main() -> anyhow::Result<()> {
             t1.await.unwrap();
             t2.await.unwrap();
 
-            handle_session.set_timeout(3000);
+            handle_session.set_timeout(timeout_ms as u32);
         });
     }
 }
