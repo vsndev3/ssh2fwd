@@ -129,11 +129,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let listener = TcpListener::bind(localsrv).await?;
+    let stream = Arc::new(Mutex::new(0));
 
     loop {
         let (socket, info) = listener.accept().await?;
         let handle_session = session.clone();
-        let stream = Arc::new(Mutex::new(0));
+        let stream_ref = stream.clone(); // Clone the Arc for each task
         let remote_srvc = remote_srv.clone();
 
         info!("New local connection for tunneling. {:?}", info);
@@ -142,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
                 &remote_srvc,
                 remote_port,
                 &handle_session,
-                stream.clone(),
+                stream_ref,
             )
             .unwrap();
             let (mut local_rd, mut local_wr) = socket.into_split();
