@@ -6,14 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = { version = "1.0.76", features = ["backtrace"] }
-clap = { version = "4.4.11", features = ["derive"] }
-env_logger = "0.10.1"
-futures = "0.3.29"
-log = "0.4.20"
-mio = { version = "0.8.10", features = ["os-poll", "net", "os-ext"] }
-mpsc = "0.2.3"
-rand = "0.8.5"
-rpassword = "7.3.1"
-ssh2 = { version = "0.9.4", features = ["vendored-openssl", "openssl-on-win32"] }
-tokio = { version = "1.35.1", features = ["full"] }
+anyhow = { version = "1.0.104", features = ["backtrace"] }
+clap = { version = "4.6.7", features = ["derive"] }
+env_logger = "0.11.11"
+libc = "0.2.189"
+log = "0.4.34"
+mio = { version = "1.2.3", features = ["os-poll", "net"] }
+rpassword = "7.5.4"
+ssh2 = { version = "0.9.6", features = ["vendored-openssl", "openssl-on-win32"] }
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "time"] }
